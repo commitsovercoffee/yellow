@@ -28,7 +28,9 @@ type items []Memo
 type item Memo
 
 // FilterValue implements the list.Item interface.
-func (i item) FilterValue() string { return "" }
+func (i item) FilterValue() string {
+	return i.Content
+}
 
 // List Styling ----------------------------------------------------------------
 
@@ -92,9 +94,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
-		case "q", "ctrl+c":
+		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+
+		case "delete":
+			if len(m.list.Items()) > 0 {
+				m.list.RemoveItem(m.list.Index())
+				if err := saveListToMemos(m.list.Items()); err != nil {
+					fmt.Fprintf(os.Stderr, "Error saving memo file after deletion: %v\n", err)
+				}
+			}
+			return m, nil
 		}
 	}
 
@@ -157,6 +168,32 @@ func loadMemos() ([]Memo, error) {
 	return loadedItems, nil
 }
 
+func saveListToMemos(listItems []list.Item) error {
+	// 1. Convert []list.Item to []Memo
+	memos := make([]Memo, len(listItems))
+	for i, li := range listItems {
+		// li is item (Memo alias), we can safely cast it
+		memoItem, ok := li.(item)
+		if !ok {
+			// Should not happen if itemDelegate is set correctly
+			continue
+		}
+		memos[i] = Memo(memoItem)
+	}
+
+	// 2. Marshal the []Memo into JSON
+	data, err := json.MarshalIndent(memos, "", "  ")
+	if err != nil {
+		return fmt.Errorf("could not marshal memos for saving: %w", err)
+	}
+
+	// 3. Write the updated data to the file
+	if err := os.WriteFile(memosFileName, data, 0644); err != nil {
+		return fmt.Errorf("could not write file %s: %w", memosFileName, err)
+	}
+	return nil
+}
+
 // Initialize List -------------------------------------------------------------
 
 func initializeList() list.Model {
@@ -180,6 +217,7 @@ func initializeList() list.Model {
 	l.Styles.Title = titleStyle
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
+	l.SetFilteringEnabled(true)
 
 	return l
 }
