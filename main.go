@@ -1,17 +1,41 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-const listHeight = 6
+// Memo ------------------------------------------------------------------------
+
+type Memo struct {
+	Content  string    `json:"content"`
+	Created  time.Time `json:"created"`
+	Modified time.Time `json:"modified"`
+}
+
+// Slice for JSON encoding/decoding.
+type items []Memo
+
+// Alias for Memo for the list.Item interface.
+type item Memo
+
+// FilterValue implements the list.Item interface.
+func (i item) FilterValue() string { return "" }
+
+// List Styling ----------------------------------------------------------------
+
+const (
+	listHeight    = 6
+	memosFileName = ".memos.json"
+)
 
 var (
 	titleStyle        = lipgloss.NewStyle().MarginLeft(2)
@@ -22,9 +46,7 @@ var (
 	quitTextStyle     = lipgloss.NewStyle().Margin(1, 0, 2, 4)
 )
 
-type item string
-
-func (i item) FilterValue() string { return "" }
+// Render List -----------------------------------------------------------------
 
 type itemDelegate struct{}
 
@@ -37,7 +59,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	str := fmt.Sprintf("%d. %s", index+1, i)
+	// Timestamp prefix (Modified time)
+	memoTime := i.Modified.Format("01/02 15:04")
+	str := fmt.Sprintf("%d. [%s] %s", index+1, memoTime, i.Content)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -49,9 +73,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(str))
 }
 
+// Bubble Tea Model ------------------------------------------------------------
+
 type model struct {
 	list     list.Model
-	choice   string
 	quitting bool
 }
 
@@ -70,7 +95,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
-
 		}
 	}
 
@@ -83,16 +107,73 @@ func (m model) View() string {
 	return "\n" + m.list.View()
 }
 
-func main() {
-	items := []list.Item{
-		item("Wash the car."),
-		item("Book tickets for John Mayer."),
-		item("Push to prod."),
+// Persistence Logic -----------------------------------------------------------
+
+func createDefaultMemos() []Memo {
+	now := time.Now()
+	return []Memo{
+		{Content: "Welcome! Add your first memo.", Created: now, Modified: now},
+		{Content: "This list is saved to a JSON file.", Created: now, Modified: now},
+		{Content: "Press 'q' or 'Ctrl+c' to quit.", Created: now, Modified: now},
+	}
+}
+
+func loadMemos() ([]Memo, error) {
+	data, err := os.ReadFile(memosFileName)
+
+	// If the file is not found, create one with defaults.
+	if os.IsNotExist(err) {
+		fmt.Printf("Memos file '%s' not found. Creating and populating with defaults.\n", memosFileName)
+
+		// Get defaults with current timestamps
+		defaultMemos := createDefaultMemos()
+
+		// Marshal the default memos into JSON
+		defaultData, marshalErr := json.MarshalIndent(defaultMemos, "", "  ")
+		if marshalErr != nil {
+			return nil, fmt.Errorf("could not marshal default memos: %w", marshalErr)
+		}
+
+		// Write the default JSON data to the file
+		if writeErr := os.WriteFile(memosFileName, defaultData, 0644); writeErr != nil {
+			return nil, fmt.Errorf("could not create and write file: %w", writeErr)
+		}
+
+		// Return the defaults to the caller
+		return defaultMemos, nil
+	}
+
+	// Handle other errors during ReadFile
+	if err != nil {
+		return nil, fmt.Errorf("could not read file: %w", err)
+	}
+
+	// Unmarshal data from an existing file
+	var loadedItems items
+	if err := json.Unmarshal(data, &loadedItems); err != nil {
+		return nil, fmt.Errorf("could not unmarshal memos: %w", err)
+	}
+
+	return loadedItems, nil
+}
+
+// Initialize List -------------------------------------------------------------
+
+func initializeList() list.Model {
+	memos, err := loadMemos()
+	if err != nil {
+		fmt.Printf("Fatal error during memo initialization: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Convert the []Memo to []list.Item
+	listItems := make([]list.Item, len(memos))
+	for i, m := range memos {
+		listItems[i] = item(m)
 	}
 
 	const defaultWidth = 20
-
-	l := list.New(items, itemDelegate{}, defaultWidth, listHeight)
+	l := list.New(listItems, itemDelegate{}, defaultWidth, listHeight)
 	l.Title = "Memos"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
@@ -100,6 +181,13 @@ func main() {
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
 
+	return l
+}
+
+// Main ------------------------------------------------------------------------
+
+func main() {
+	l := initializeList()
 	m := model{list: l}
 
 	if _, err := tea.NewProgram(m).Run(); err != nil {
