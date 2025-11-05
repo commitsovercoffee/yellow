@@ -18,7 +18,25 @@ These weren’t structured enough for my main note-taking app ([Obsidian](https:
 For Linux 64-bit:
 
 ```bash
-curl -sL https://github.com/commitsovercoffee/yellow/releases/download/v1.0.0/yellow-linux-amd64 -o yellow && chmod +x yellow && sudo mv yellow /usr/local/bin/
+curl -sL https://github.com/commitsovercoffee/yellow/releases/download/v1.1.0/yellow-linux-amd64 -o yellow && chmod +x yellow && sudo mv yellow /usr/local/bin/
+```
+For macOS Intel (64-bit):
+
+```bash
+curl -sL https://github.com/commitsovercoffee/yellow/releases/download/v1.1.0/yellow-darwin-amd64 -o yellow && chmod +x yellow && sudo mv yellow /usr/local/bin/
+```
+
+For macOS Apple Silicon (arm64):
+
+```bash
+curl -sL https://github.com/commitsovercoffee/yellow/releases/download/v1.1.0/yellow-darwin-arm64 -o yellow && chmod +x yellow && sudo mv yellow /usr/local/bin/
+```
+
+## Uninstallation
+
+```bash
+sudo rm /usr/local/bin/yellow # remove app
+rm -rf ~/.config/yellow/ # remove data (Optional)
 ```
 
 ## License
