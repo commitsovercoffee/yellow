@@ -1,2 +1,3 @@
-.yellow.json
-.yellow.log
+# Ignore builds
+yellow-*-amd64
+yellow-*-arm64
