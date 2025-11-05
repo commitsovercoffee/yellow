@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -99,6 +100,23 @@ func (s *Storage) Save(data *MemoData) error {
 	return os.WriteFile(s.filepath, jsonData, 0644)
 }
 
+// Path Helpers ----------------------------------------------------------------
+
+func getDataFilePath(filename string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	// Create .config/yellow directory if it doesn't exist
+	configDir := filepath.Join(homeDir, ".config", "yellow")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	return filepath.Join(configDir, filename), nil
+}
+
 // Model -----------------------------------------------------------------------
 
 type ViewMode uint8
@@ -134,10 +152,16 @@ func (m *Model) clearFlag(flag uint8)    { m.flags &^= flag }
 func (m *Model) hasFlag(flag uint8) bool { return m.flags&flag != 0 }
 
 func InitialModel() Model {
+	dataPath, err := getDataFilePath("yellow.json")
+	if err != nil {
+		log.Printf("Error getting data path: %v, falling back to current directory", err)
+		dataPath = ".yellow.json"
+	}
+
 	return Model{
 		list:        newList(make([]list.Item, 0, 32)),
 		textarea:    newTextarea(),
-		storage:     NewStorage(".yellow.json"),
+		storage:     NewStorage(dataPath),
 		memos:       make([]Memo, 0, 32),
 		deleted:     make([]Memo, 0, 8),
 		currentMode: ViewModeList,
@@ -531,9 +555,14 @@ func sortMemosNewestFirst(memos []Memo) {
 }
 
 func setupLogging() error {
-	f, err := os.OpenFile(".yellow.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	logPath, err := getDataFilePath("yellow.log")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get log path: %w", err)
+	}
+
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
 	}
 	log.SetOutput(f)
 	return nil
@@ -543,7 +572,7 @@ func setupLogging() error {
 
 func main() {
 	if err := setupLogging(); err != nil {
-		fmt.Printf("Warning: Could not set up logging: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: Could not set up logging: %v\n", err)
 	}
 
 	p := tea.NewProgram(InitialModel(), tea.WithAltScreen())
